@@ -13,10 +13,13 @@ import android.hardware.SensorManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Build;
+import android.os.Environment;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.View;
+import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
 
@@ -27,8 +30,16 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
@@ -101,7 +112,7 @@ public class SensorService extends Service implements SensorEventListener {
                 linearAcceleration = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
 
                 sensorManager.registerListener(this, gyroscope, 33333);
-                sensorManager.registerListener(this, heartRateSensor, 33333);
+                sensorManager.registerListener(this, heartRateSensor, SensorManager.SENSOR_DELAY_NORMAL);
                 sensorManager.registerListener(this, acceleration, 33333);
                 sensorManager.registerListener(this, linearAcceleration, 33333);
             }
@@ -208,6 +219,8 @@ public class SensorService extends Service implements SensorEventListener {
                 if (buffer.size() >= BUFFER_SIZE) {
                     String topic = topicBase + type;
                     String payload = TextUtils.join("\n", buffer);
+                    Log.i(TAG, "Error in payload: " + payload);
+
                     publishSensorData(topic, payload);
                     buffer.clear();
                 }
@@ -218,6 +231,9 @@ public class SensorService extends Service implements SensorEventListener {
     }
 
     private void publishSensorData(String topic, String payload) {
+        Log.d(TAG, "MQTT Sensors Manager Topic: " + topic );
+//        Log.d(TAG, "MQTT Sensors Manager payload: " + payload );
+
         try {
             if (mqttAndroidClient != null && mqttAndroidClient.isConnected()) {
                 mqttAndroidClient.publish(topic, new MqttMessage(payload.getBytes()));
@@ -270,6 +286,52 @@ public class SensorService extends Service implements SensorEventListener {
         } catch (Exception e) {
             Log.e(TAG, "Error in createNotification: " + e.getMessage(), e);
             return null;
+        }
+    }
+
+    /*
+     * Writes the CSV file with the current timestamp in the file name for accelerometer data.
+     * Takes in the toggle button view, the data to be added, and filename Eg: acc,gry ...
+     * */
+    public void save_data(View view, ArrayList<String> data, String filename){
+        System.out.println("BUTTON PRESSED : Sensors Button Pressed");
+        try{
+            File sdCard = Environment.getExternalStorageDirectory();
+            File dir = new File(sdCard.getAbsolutePath() + "/Download");
+            System.out.println("DIRECTORY: ---" + dir.toString());
+            if(!dir.exists()) { // if directory does not exist then create one.
+                dir.mkdirs();
+            }
+            Date currentTime = Calendar.getInstance().getTime();
+            long time= System.currentTimeMillis();
+            System.out.println("DATE AND TIME CURRENT: ---" + time);
+            // Depending on the user selection enter the.
+            File file = new File(dir, "/"+ filename +"_"+ time +".csv");
+            if (!file.exists()) {
+                file.createNewFile();
+            }
+            FileOutputStream f = new FileOutputStream(file);
+            OutputStreamWriter osw = new OutputStreamWriter(f, StandardCharsets.UTF_8);
+            // Buffer is needed to create the UTF 8 formatting and
+            BufferedWriter writer = new BufferedWriter(osw);
+            String mHeader ="Timestamp," + "x," + "y," + "z";
+            writer.append(mHeader);
+            writer.newLine();
+            try {
+                for (int i = 0 ; i <data.size() ; i++){
+                    writer.append(data.get(i));
+                    writer.newLine();
+                }
+                f.flush();
+                f.close();
+                Toast.makeText(getBaseContext(), filename + " Data saved", Toast.LENGTH_LONG).show();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
